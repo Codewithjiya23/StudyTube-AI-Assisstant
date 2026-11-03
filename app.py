@@ -1,5 +1,8 @@
 
-"""StudyTube AI ✨ - turn YouTube videos into a personal learning experience.
+           
+   
+         
+   """StudyTube AI ✨ - turn YouTube videos into a personal learning experience.
 
 Stack: Streamlit + Google Gemini (google-genai SDK) + youtube-transcript-api + ReportLab.
 The Gemini API key is read from Streamlit Secrets (GEMINI_API_KEY) - never hard-coded.
@@ -257,7 +260,7 @@ def clean_manual_transcript(text):
 # ----------------------------------------------------------------------------
 # Gemini helpers
 # ----------------------------------------------------------------------------
-STATIC_MODELS = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
+STATIC_MODELS = ["gemini-flash-latest", "gemini-3.6-flash", "gemini-3.5-flash"]
 SKIP_WORDS = ("image", "tts", "live", "audio", "embedding", "robotics", "transcribe", "omni", "native",
               "thinking", "exp", "computer", "lite")
 
