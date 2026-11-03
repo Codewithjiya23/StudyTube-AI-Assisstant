@@ -4,3 +4,4 @@ youtube-transcript-api>=1.0.0
 reportlab>=4.0.0
 arabic-reshaper>=3.0.0
 python-bidi>=0.4.2
+groq
