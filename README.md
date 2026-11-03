@@ -86,7 +86,7 @@ Notes:
 
 YouTube often blocks requests coming from cloud servers (including Streamlit Cloud). The app never crashes in that case. It shows a clear message and offers these options:
 
-1. **Paste or upload the transcript** in the *"Can't fetch the transcript?"* section (works everywhere). On YouTube: open the video → **⋯ More → Show transcript** → copy the text. `.txt`, `.srt` and `.vtt` files are accepted; timestamps are removed automatically.
+1. **Paste or upload the transcript** by choosing **Paste Transcript Manually** at the top of the app (works everywhere). On YouTube: open the video → **⋯ More → Show transcript** → copy the text. `.txt`, `.srt` and `.vtt` files are accepted; timestamps are removed automatically.
 2. **Use a proxy** (optional, most reliable for a public app). Add one of these to your secrets:
    ```toml
    PROXY_URL = "http://username:password@proxy-host:port"
