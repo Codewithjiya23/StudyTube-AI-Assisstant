@@ -198,7 +198,7 @@ def fetch_title(video_id):
         return "YouTube Video"
 
 
-BLOCK_HELP = (" You can still continue: open **“Can't fetch the transcript?”** below and paste the transcript "
+BLOCK_HELP = (" You can still continue: choose **Paste Transcript Manually** above and paste the transcript "
               "(YouTube: ⋯ More → Show transcript) or upload a .txt/.srt/.vtt file.")
 
 
@@ -680,6 +680,14 @@ def card(text, color=""):
     st.markdown(f'<div class="card {color}">{safe}</div>', unsafe_allow_html=True)
 
 
+MODE_URL = "🔗 YouTube URL (automatic captions)"
+MODE_MANUAL = "📋 Paste Transcript Manually"
+
+
+def switch_to_manual():
+    st.session_state.input_mode = MODE_MANUAL
+
+
 def reset_session():
     st.session_state.update(quiz_ver=st.session_state.get("quiz_ver", 0) + 1, quiz_result=None, fc_idx=0,
                             fc_show=False, chat=[], feedback=None, pdf=None, pdf_warning=None)
@@ -750,7 +758,7 @@ def process(client, source, url, manual_text, difficulty, language):
 st.markdown(CSS, unsafe_allow_html=True)
 for key, default in {"data": None, "quiz_ver": 0, "quiz_result": None, "fc_idx": 0, "fc_show": False,
                      "chat": [], "feedback": None, "pdf": None, "pdf_warning": None, "error": None,
-                     "show_fallback": False}.items():
+                     "show_fallback": False, "input_mode": MODE_URL}.items():
     st.session_state.setdefault(key, default)
 
 st.markdown('<div class="hero"><h1>StudyTube AI ✨</h1>'
@@ -764,7 +772,20 @@ if not api_key:
     st.stop()
 client = get_client(api_key)
 
-url = st.text_input("🔗 YouTube video URL", placeholder="https://www.youtube.com/watch?v=...")
+mode = st.radio("How do you want to provide the video?", [MODE_URL, MODE_MANUAL], key="input_mode",
+                horizontal=True)
+manual, upload = "", None
+if mode == MODE_URL:
+    url = st.text_input("🔗 YouTube video URL", placeholder="https://www.youtube.com/watch?v=...", key="url_input")
+else:
+    url = st.text_input("🔗 YouTube video URL (optional - only used for the title and thumbnail)",
+                        placeholder="https://www.youtube.com/watch?v=...", key="url_optional")
+    st.caption("On YouTube open the video, click ⋯ More → Show transcript, copy the text and paste it below. "
+               "Timestamps are removed automatically.")
+    manual = st.text_area("📋 Paste your transcript here", height=320, key="manual_text",
+                          placeholder="Paste the full video transcript here...")
+    upload = st.file_uploader("…or upload a transcript file (.txt, .srt, .vtt)", type=["txt", "srt", "vtt"])
+
 c1, c2, c3 = st.columns([1, 1, 1])
 difficulty = c1.selectbox("🎚️ Difficulty", list(DIFFICULTY))
 language = c2.selectbox("🌍 Language", ["English", "Urdu"])
@@ -772,35 +793,35 @@ c3.markdown("<div style='height:1.85rem'></div>", unsafe_allow_html=True)
 go = c3.button("✨ Generate Study Material")
 
 err_slot = st.empty()
+switch_slot = st.empty()
 if st.session_state.error:
     err_slot.error(f"⚠️ {st.session_state.error}")
-
-with st.expander("🛟 Can't fetch the transcript? Paste or upload it instead",
-                 expanded=st.session_state.show_fallback):
-    st.caption("If YouTube blocks the request or the video has no accessible captions, paste the transcript here "
-               "(on YouTube: ⋯ More → Show transcript → copy) or upload a .txt, .srt or .vtt file. "
-               "The URL above is optional in this mode (used only for the title and thumbnail).")
-    manual = st.text_area("Transcript text", height=160, key="manual_text")
-    upload = st.file_uploader("…or upload a transcript file", type=["txt", "srt", "vtt"])
-    go_manual = st.button("✨ Generate from this transcript")
+    if st.session_state.show_fallback and mode == MODE_URL:
+        with switch_slot:
+            st.button("📋 Switch to Paste Transcript Manually", on_click=switch_to_manual)
 
 if go:
     err_slot.empty()
-    process(client, "youtube", url, "", difficulty, language)
-elif go_manual:
-    err_slot.empty()
-    raw = upload.getvalue().decode("utf-8-sig", errors="replace") if upload else manual
-    cleaned = clean_manual_transcript(raw or "")
-    if len(cleaned) < MIN_CHARS:
-        st.session_state.error = "Please paste or upload a transcript with at least a few sentences."
-        st.session_state.show_fallback = True
-        st.rerun()
-    process(client, "manual", url, cleaned, difficulty, language)
+    switch_slot.empty()
+    if mode == MODE_URL:
+        process(client, "youtube", url, "", difficulty, language)
+    else:
+        raw = upload.getvalue().decode("utf-8-sig", errors="replace") if upload else manual
+        if not (raw or "").strip():
+            st.session_state.error = "Please paste your transcript (or upload a transcript file) before generating."
+            st.rerun()
+        cleaned = clean_manual_transcript(raw)
+        if not cleaned:
+            st.session_state.error = ("No readable text was found. Make sure you pasted the spoken words of the "
+                                      "transcript, not only timestamps.")
+            st.rerun()
+        process(client, "manual", url, cleaned, difficulty, language)
 
 data = st.session_state.data
 if not data:
-    st.info("Paste a YouTube link above, choose a level and language, then click **Generate Study Material**. "
-            "The video needs captions (manual or auto-generated).")
+    st.info("Choose how to provide the video, pick a level and language, then click **Generate Study Material**. "
+            "Use **YouTube URL** for automatic captions, or **Paste Transcript Manually** if the video has no "
+            "accessible captions.")
     st.stop()
 
 meta, mat, mcqs, cards = data["meta"], data["material"], data["mcqs"], data["cards"]
