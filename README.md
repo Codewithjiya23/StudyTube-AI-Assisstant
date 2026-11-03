@@ -40,7 +40,8 @@ README.md         # this file
 5. Create `.streamlit/secrets.toml` next to `app.py`:
    ```toml
    GEMINI_API_KEY = "your-api-key-here"
-   # Optional: GEMINI_MODEL = "gemini-2.5-flash"
+   # Optional - normally leave this out, the app picks a working Gemini model automatically:
+   # GEMINI_MODEL = "gemini-3.6-flash"
    ```
 6. Start the app: `streamlit run app.py`
 
@@ -102,6 +103,7 @@ YouTube often blocks requests coming from cloud servers (including Streamlit Clo
 |---|---|
 | "Subtitles are disabled" / "No transcript" | The video has no captions. Use the paste/upload fallback with a transcript from another source. |
 | "YouTube is blocking transcript requests" | See the section above. |
+| "No available Gemini model was found" / "model not found" | Google retires old models (e.g. `gemini-2.5-flash` shut down in Oct 2026). Remove `GEMINI_MODEL` from Secrets so the app auto-selects, or set it to a current name from <https://ai.google.dev/gemini-api/docs/models>. |
 | "Gemini rejected the request" | Check `GEMINI_API_KEY` in Secrets. |
 | "Quota / rate limit reached" | Wait a minute, or use a key with higher limits. |
 | Urdu letters show as `?` in the PDF | Make sure `packages.txt` is in the repo root, then reboot the app. |
