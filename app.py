@@ -1,8 +1,4 @@
-
-           
-   
-         
-   """StudyTube AI ✨ - turn YouTube videos into a personal learning experience.
+"""StudyTube AI ✨ - turn YouTube videos into a personal learning experience.
 
 Stack: Streamlit + Google Gemini (google-genai SDK) + youtube-transcript-api + ReportLab.
 The Gemini API key is read from Streamlit Secrets (GEMINI_API_KEY) - never hard-coded.
