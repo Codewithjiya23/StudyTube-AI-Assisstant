@@ -1,0 +1,2 @@
+fonts-noto-core
+fonts-dejavu-core
