@@ -1,3 +1,4 @@
+
 """StudyTube AI ✨ - turn YouTube videos into a personal learning experience.
 
 Stack: Streamlit + Google Gemini (google-genai SDK) + youtube-transcript-api + ReportLab.
@@ -152,10 +153,12 @@ def get_api_key():
 
 
 def get_model_name():
+    """Optional GEMINI_MODEL secret (the app picks a working model automatically if it is not set)."""
     try:
-        return st.secrets["GEMINI_MODEL"]
+        name = st.secrets["GEMINI_MODEL"]
+        return str(name).replace("models/", "").strip() or None
     except Exception:
-        return "gemini-2.5-flash"
+        return None
 
 
 def get_proxy_config():
@@ -254,37 +257,81 @@ def clean_manual_transcript(text):
 # ----------------------------------------------------------------------------
 # Gemini helpers
 # ----------------------------------------------------------------------------
-def ask_gemini(client, prompt, system, as_json=True, max_tokens=16384):
-    model = get_model_name()
-    kwargs = {}
-    if model.startswith("gemini-2.5-flash"):  # skip hidden "thinking" tokens: faster, fewer truncated answers
-        kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-    cfg = types.GenerateContentConfig(
-        system_instruction=system, temperature=0.3, max_output_tokens=max_tokens,
-        response_mime_type="application/json" if as_json else None, **kwargs)
-    for attempt in range(3):
-        try:
-            resp = client.models.generate_content(model=model, contents=prompt, config=cfg)
-            if not resp.text:
-                raise AppError("Gemini returned no content (the response may have been blocked). Please try again.")
-            return resp.text
-        except AppError:
-            raise
-        except errors.APIError as e:
-            code = getattr(e, "code", None)
-            if code in (429, 500, 503) and attempt < 2:
-                time.sleep(2 * (attempt + 1))
-                continue
-            if code in (400, 401, 403):
-                raise AppError("Gemini rejected the request. Check that GEMINI_API_KEY is valid and has access.")
-            if code == 404:
-                raise AppError("The Gemini model was not found. Set a valid GEMINI_MODEL in secrets.")
-            if code == 429:
-                raise AppError("Gemini quota/rate limit reached. Please wait a minute and try again.")
-            raise AppError("Gemini is temporarily unavailable. Please try again shortly.")
-        except Exception as e:
-            raise AppError(f"Could not reach Gemini ({type(e).__name__}). Please try again.")
-    raise AppError("Gemini did not respond. Please try again.")
+STATIC_MODELS = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
+SKIP_WORDS = ("image", "tts", "live", "audio", "embedding", "robotics", "transcribe", "omni", "native",
+              "thinking", "exp", "computer", "lite")
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def discover_models(_client, key_id):
+    """Ask the API which text Flash models this key can use (newest first)."""
+    found = []
+    try:
+        for m in _client.models.list():
+            name = (m.name or "").replace("models/", "")
+            actions = getattr(m, "supported_actions", None) or []
+            if ("generateContent" in actions and name.startswith("gemini-") and "flash" in name
+                    and not any(w in name for w in SKIP_WORDS)):
+                found.append(name)
+    except Exception:
+        return []
+
+    def rank(n):
+        v = re.search(r"gemini-(\d+(?:\.\d+)?)", n)
+        return (float(v.group(1)) if v else 0.0, "preview" not in n, -len(n))
+
+    return sorted(found, key=rank, reverse=True)
+
+
+def model_candidates(client):
+    key = get_api_key() or ""
+    names = [st.session_state.get("good_model"), get_model_name(), "gemini-flash-latest"]
+    names += discover_models(client, key[-6:]) + STATIC_MODELS
+    out = []
+    for n in names:
+        if n and n not in out:
+            out.append(n)
+    return out[:8]
+
+
+def ask_gemini(client, prompt, system, as_json=True, max_tokens=32768):
+    for model in model_candidates(client):
+        kwargs = {}
+        if model.startswith("gemini-2.5-flash"):  # skip hidden "thinking" tokens on 2.5 models
+            kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+        if model.startswith("gemini-2"):  # Gemini 3+ works best with its default temperature
+            kwargs["temperature"] = 0.3
+        cfg = types.GenerateContentConfig(
+            system_instruction=system, max_output_tokens=max_tokens,
+            response_mime_type="application/json" if as_json else None, **kwargs)
+        for attempt in range(3):
+            try:
+                resp = client.models.generate_content(model=model, contents=prompt, config=cfg)
+                if not resp.text:
+                    raise AppError("Gemini returned no content (the response may have been blocked). Please try again.")
+                st.session_state["good_model"] = model  # remember what works
+                return resp.text
+            except AppError:
+                raise
+            except errors.APIError as e:
+                code = getattr(e, "code", None)
+                msg = str(getattr(e, "message", "") or e)
+                gone = code == 404 or (code in (400, 403) and "api key" not in msg.lower()
+                                       and re.search(r"no longer available|not found|not supported", msg, re.I))
+                if gone:
+                    break  # this model name is retired/unavailable -> try the next candidate
+                if code in (429, 500, 503) and attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                if code in (400, 401, 403):
+                    raise AppError("Gemini rejected the request. Check that GEMINI_API_KEY is valid and has access.")
+                if code == 429:
+                    raise AppError("Gemini quota/rate limit reached. Please wait a minute and try again.")
+                raise AppError("Gemini is temporarily unavailable. Please try again shortly.")
+            except Exception as e:
+                raise AppError(f"Could not reach Gemini ({type(e).__name__}). Please try again.")
+    raise AppError("No available Gemini model was found for your API key. Set GEMINI_MODEL in Secrets to a current "
+                   "model name (see ai.google.dev/gemini-api/docs/models).")
 
 
 def parse_json(text):
@@ -403,7 +450,7 @@ def ask_about_video(client, transcript, history, question, language):
               f"Answer in {lang}, clearly and concisely.")
     past = "\n".join(f"{'User' if r == 'user' else 'Assistant'}: {t}" for r, t in history[-6:])
     prompt = f'TRANSCRIPT:\n"""\n{transcript}\n"""\n\nPrevious conversation:\n{past}\n\nQuestion: {question}'
-    return ask_gemini(client, prompt, system, as_json=False, max_tokens=4096)
+    return ask_gemini(client, prompt, system, as_json=False, max_tokens=8192)
 
 
 def ai_feedback(client, material, mcqs, result, language):
@@ -414,7 +461,7 @@ def ai_feedback(client, material, mcqs, result, language):
               f"{material['summary']}\n\nQuestions answered wrongly:\n" + ("\n".join(wrong) or "None") +
               f"\n\nWrite 4-5 short, encouraging, personalised improvement tips in {lang}, based only on these results.")
     return ask_gemini(client, prompt, "You are a supportive study coach. Do not invent video content.",
-                      as_json=False, max_tokens=2048)
+                      as_json=False, max_tokens=4096)
 
 
 # ----------------------------------------------------------------------------
